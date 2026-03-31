@@ -202,7 +202,9 @@ async function fetchRealData(symbol, years) {
     const endDate = Math.floor(Date.now() / 1000);
     const startDate = endDate - (years * 365 * 24 * 60 * 60);
     
-    const API_BASE_URL = 'http://localhost:8000';
+    const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+      ? 'http://localhost:8000' 
+      : 'https://api.wrapsynth.com';
     const url = `${API_BASE_URL}/api/yahoo/${symbol}?period1=${startDate}&period2=${endDate}&interval=1d`;
     
     const resp = await fetch(url);
