@@ -186,7 +186,7 @@ contract Vault is IVault {
         
         require(usdc.transferFrom(msg.sender, address(this), amount), "Transfer failed");
         
-        shares = juniorTranche.deposit(amount);
+        shares = juniorTranche.deposit(msg.sender, amount);
         poolState.totalJuniorDeposits += uint128(amount);
         
         // Update max leverage based on new junior ratio
@@ -197,8 +197,14 @@ contract Vault is IVault {
     
     /// @notice Withdraw from junior tranche
     function withdrawJunior(uint256 shares) external returns (uint256 amount) {
-        amount = juniorTranche.withdraw(shares);
-        poolState.totalJuniorDeposits -= uint128(amount);
+        amount = juniorTranche.withdraw(msg.sender, shares);
+        
+        // Prevent underflow - if amount exceeds tracked deposits, set to 0
+        if (amount >= poolState.totalJuniorDeposits) {
+            poolState.totalJuniorDeposits = 0;
+        } else {
+            poolState.totalJuniorDeposits -= uint128(amount);
+        }
         
         require(usdc.transfer(msg.sender, amount), "Transfer failed");
         

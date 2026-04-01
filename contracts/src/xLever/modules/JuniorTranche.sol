@@ -26,9 +26,10 @@ contract JuniorTranche {
     }
     
     /// @notice Deposit USDC into junior tranche
+    /// @param user Address of the user depositing
     /// @param assets Amount of USDC to deposit
     /// @return sharesIssued Number of shares minted
-    function deposit(uint256 assets) external onlyVault returns (uint256 sharesIssued) {
+    function deposit(address user, uint256 assets) external onlyVault returns (uint256 sharesIssued) {
         require(assets > 0, "Zero deposit");
         
         if (totalShares == 0) {
@@ -39,28 +40,29 @@ contract JuniorTranche {
             sharesIssued = assets * totalShares / totalAssets;
         }
         
-        shares[msg.sender] += sharesIssued;
+        shares[user] += sharesIssued;
         totalShares += sharesIssued;
         totalAssets += assets;
         
-        emit Deposit(msg.sender, assets, sharesIssued);
+        emit Deposit(user, assets, sharesIssued);
     }
     
     /// @notice Withdraw USDC from junior tranche
+    /// @param user Address of the user withdrawing
     /// @param sharesToBurn Number of shares to redeem
     /// @return assetsReturned Amount of USDC returned
-    function withdraw(uint256 sharesToBurn) external onlyVault returns (uint256 assetsReturned) {
+    function withdraw(address user, uint256 sharesToBurn) external onlyVault returns (uint256 assetsReturned) {
         require(sharesToBurn > 0, "Zero withdrawal");
-        require(shares[msg.sender] >= sharesToBurn, "Insufficient shares");
+        require(shares[user] >= sharesToBurn, "Insufficient shares");
         
         // Calculate proportional assets
         assetsReturned = sharesToBurn * totalAssets / totalShares;
         
-        shares[msg.sender] -= sharesToBurn;
+        shares[user] -= sharesToBurn;
         totalShares -= sharesToBurn;
         totalAssets -= assetsReturned;
         
-        emit Withdraw(msg.sender, sharesToBurn, assetsReturned);
+        emit Withdraw(user, sharesToBurn, assetsReturned);
     }
     
     /// @notice Absorb losses from senior tranche

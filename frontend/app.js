@@ -13,10 +13,10 @@ const TOKEN_ADDRESSES = {
   wSPYx: '0x9eF9f9B22d3CA9769e28e769e2AAA3C2B0072D0e'
 };
 
-// Vault contract addresses (DEPLOYED - Fixed Vault with initialized TWAP)
+// Vault contract addresses (DEPLOYED - Fixed Vault with user-tracking junior tranche and withdrawal fix)
 const VAULT_ADDRESSES = {
-  wSPYx: '0xe96adcFA329f40ACFb73AdD9CCCA957686b9712d',
-  wQQQx: '0x5861B179Ed373eF0A4A79D4a1C0a0eDd40096955'
+  wSPYx: '0xe5fb4246fe7513643c1e5427737efcdc5555657e',
+  wQQQx: '0xa79826d1a4374714ff35b7bf9450d2bb60e5bc67'
 };
 
 // Minimal ERC-20 ABI for balanceOf
@@ -44,6 +44,16 @@ const ERC20_ABI = [
       { name: 'amount', type: 'uint256' }
     ],
     outputs: [{ name: '', type: 'bool' }]
+  },
+  {
+    name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' }
+    ],
+    outputs: [{ name: '', type: 'uint256' }]
   }
 ];
 
@@ -487,7 +497,9 @@ async function withdrawJunior() {
       functionName: 'withdrawJunior',
       args: [shares],
       account: connectedAddress,
-      gas: 500000n
+      gas: 500000n,
+      maxFeePerGas: 2000000000n,
+      maxPriorityFeePerGas: 1000000000n
     });
 
     console.log('Waiting for withdrawal confirmation...');
