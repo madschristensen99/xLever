@@ -267,7 +267,15 @@
               SPY
             </button>
           </div>
-          <input type="number" id="positionAmountInput" placeholder="Enter USDC Amount" 
+          <div style="margin-bottom: 8px;">
+            <label id="positionAmountLabel" style="font-size: 13px; color: rgba(255,255,255,0.6); display: block; margin-bottom: 4px;">
+              Deposit Amount (USDC for SHORT)
+            </label>
+            <div id="assetRequirementInfo" style="font-size: 11px; color: rgba(102, 126, 234, 0.8); margin-bottom: 8px;">
+              ℹ️ Short positions require USDC collateral
+            </div>
+          </div>
+          <input type="number" id="positionAmountInput" placeholder="Enter amount" 
                  style="width: 100%; padding: 14px 18px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 16px; font-family: 'JetBrains Mono', monospace; box-sizing: border-box;" />
           <button id="openPositionBtn" 
                   style="width: 100%; padding: 14px 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 8px; color: #fff; font-weight: 600; font-size: 15px; cursor: pointer; transition: all 0.2s;">
@@ -625,9 +633,15 @@
 <script src="vault-functions.js"></script>
 <script src="position-manager.js"></script>
 <script src="junior-manager.js"></script>
+<script src="leverage-ui-updater.js"></script>
 <script>
 // Initialize junior page when switching to it
 document.addEventListener('DOMContentLoaded', () => {
+  // Load junior stats on page load (pool stats don't need wallet)
+  if (typeof updateJuniorPageUI === 'function') {
+    updateJuniorPageUI();
+  }
+  
   const juniorBtn = document.getElementById('juniorBtn');
   if (juniorBtn) {
     juniorBtn.addEventListener('click', () => {

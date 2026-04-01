@@ -10,7 +10,7 @@ let selectedVault = 'wQQQx'; // Default vault for junior deposits
 
 // Fetch comprehensive junior tranche data
 async function fetchJuniorData() {
-  if (!publicClient || !connectedAddress) return null;
+  if (!publicClient) return null;
 
   try {
     const vaultAddress = VAULT_ADDRESSES[selectedVault];
@@ -20,23 +20,20 @@ async function fetchJuniorData() {
       address: vaultAddress,
       abi: VAULT_ABI,
       functionName: 'juniorTranche'
-    }).catch(() => null);
+    }).catch(err => {
+      console.error('Error fetching junior tranche address:', err);
+      return null;
+    });
 
     if (!juniorTrancheAddress) {
-      console.log('⚠️ Junior tranche not available');
+      console.log('⚠️ Junior tranche not available for vault:', vaultAddress);
       return null;
     }
+    
+    console.log('✓ Junior tranche address:', juniorTrancheAddress);
 
-    // Fetch all data in parallel
-    const [
-      poolState,
-      juniorValue,
-      userShares,
-      totalSharesValue,
-      fundingRate,
-      maxLeverage,
-      twapData
-    ] = await Promise.all([
+    // Fetch pool stats (always available)
+    const poolDataPromises = [
       publicClient.readContract({
         address: vaultAddress,
         abi: VAULT_ABI,
@@ -46,12 +43,6 @@ async function fetchJuniorData() {
         address: vaultAddress,
         abi: VAULT_ABI,
         functionName: 'getJuniorValue'
-      }),
-      publicClient.readContract({
-        address: juniorTrancheAddress,
-        abi: JUNIOR_TRANCHE_ABI,
-        functionName: 'getShares',
-        args: [connectedAddress]
       }),
       publicClient.readContract({
         address: juniorTrancheAddress,
@@ -73,7 +64,27 @@ async function fetchJuniorData() {
         abi: VAULT_ABI,
         functionName: 'getCurrentTWAP'
       }).catch(() => [0n, 0n])
-    ]);
+    ];
+
+    const [
+      poolState,
+      juniorValue,
+      totalSharesValue,
+      fundingRate,
+      maxLeverage,
+      twapData
+    ] = await Promise.all(poolDataPromises);
+
+    // Fetch user shares only if wallet connected
+    let userShares = 0n;
+    if (connectedAddress) {
+      userShares = await publicClient.readContract({
+        address: juniorTrancheAddress,
+        abi: JUNIOR_TRANCHE_ABI,
+        functionName: 'getShares',
+        args: [connectedAddress]
+      }).catch(() => 0n);
+    }
 
     const { formatUnits } = window.viem;
 
@@ -367,9 +378,9 @@ async function updateAssetUI() {
 function initJuniorPage() {
   // No asset selector needed - junior deposits only accept USDC
 
-  // Vault selector
+  // Vault selector - only create if it doesn't exist
   const juniorHero = document.querySelector('.junior-hero');
-  if (juniorHero) {
+  if (juniorHero && !juniorHero.querySelector('.vault-selector')) {
     const vaultSelector = document.createElement('div');
     vaultSelector.className = 'vault-selector';
     vaultSelector.innerHTML = `

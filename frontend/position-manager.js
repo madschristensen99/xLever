@@ -118,67 +118,102 @@ document.getElementById('openPositionBtn')?.addEventListener('click', async () =
 
   try {
     btn.disabled = true;
-    btn.textContent = 'Opening...';
+    btn.textContent = 'Checking liquidity...';
     
-    console.log(`Opening position: ${amount} USDC @ ${currentLeverage}x on ${selectedAsset}`);
+    // Check if xLever Vault has junior liquidity available
+    const isLong = currentLeverage > 0;
+    const vaultAddress = VAULT_ADDRESSES[selectedAsset];
+    
+    try {
+      const juniorValue = await publicClient.readContract({
+        address: vaultAddress,
+        abi: VAULT_ABI,
+        functionName: 'getJuniorValue'
+      });
+      
+      const availableLiquidity = juniorValue[0]; // First element is total junior value
+      
+      if (availableLiquidity === 0n) {
+        btn.disabled = false;
+        btn.textContent = 'Open Position';
+        showToast(
+          `⚠️ No junior liquidity available!\n\n` +
+          `Please deposit to Junior LP first to provide liquidity.\n\n` +
+          `Click "Junior LP" tab → Select ${selectedAsset === 'wSPYx' ? 'SPY' : 'QQQ'} Vault → Deposit USDC`,
+          'warning',
+          8000
+        );
+        return;
+      }
+      
+      console.log(`✓ Junior liquidity available: ${availableLiquidity.toString()}`);
+    } catch (err) {
+      console.error('Error checking liquidity:', err);
+      // Continue anyway - let the transaction fail if there's really no liquidity
+    }
+    
+    console.log(`Opening position: ${amount} @ ${currentLeverage}x on ${selectedAsset}`);
 
     const { parseUnits } = window.viem;
-    const amountParsed = parseUnits(amount.toString(), 6);
-    const vaultAddress = VAULT_ADDRESSES[selectedAsset];
+    const hedgingModule = HEDGING_MODULES[selectedAsset];
+    const absLeverage = Math.abs(currentLeverage);
+    const targetLeverageBps = Math.round(absLeverage * 10000);
+    
+    // Current contract implementation:
+    // Long: needs wrapped token (wSPYx/wQQQx) as collateral
+    // Short: needs USDC as collateral
+    const collateralToken = isLong ? TOKEN_ADDRESSES[selectedAsset] : TOKEN_ADDRESSES.USDC;
+    const decimals = isLong ? 18 : 6;
+    const amountParsed = parseUnits(amount.toString(), decimals);
 
-    // Step 1: Approve USDC
-    console.log('Approving USDC...');
-    btn.textContent = 'Approving USDC...';
+    // Step 1: Approve collateral token to hedging module
+    const tokenName = isLong ? selectedAsset : 'USDC';
+    console.log(`Approving ${tokenName} to hedging module...`);
+    btn.textContent = `Approving ${tokenName}...`;
     
     let approveTx;
     try {
       approveTx = await walletClient.writeContract({
-        address: TOKEN_ADDRESSES.USDC,
+        address: collateralToken,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [vaultAddress, amountParsed],
+        args: [hedgingModule, amountParsed],
         account: connectedAddress,
         gas: 100000n,
-        maxFeePerGas: 2000000000n, // 2 gwei
-        maxPriorityFeePerGas: 1000000000n // 1 gwei
+        maxFeePerGas: 2000000000n,
+        maxPriorityFeePerGas: 1000000000n
       });
       console.log('✓ Approval tx sent:', approveTx);
     } catch (approveError) {
-      // Transaction was sent but RPC returned error - continue anyway
       console.log('Approval sent (RPC error ignored):', approveError.message);
     }
     
     btn.textContent = 'Approval pending...';
-    
-    // Wait for approval to be mined
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Step 2: Deposit to vault
-    console.log('Opening position...');
-    btn.textContent = 'Depositing...';
+    // Step 2: Open leveraged position with real looping
+    console.log(`Opening ${isLong ? 'LONG' : 'SHORT'} position with ${absLeverage}x leverage...`);
+    btn.textContent = `Opening ${absLeverage}x ${isLong ? 'Long' : 'Short'}...`;
     
-    let depositTx;
+    let positionTx;
     try {
-      depositTx = await walletClient.writeContract({
-        address: vaultAddress,
-        abi: VAULT_ABI,
-        functionName: 'deposit',
-        args: [amountParsed, leverageBps],
+      positionTx = await walletClient.writeContract({
+        address: hedgingModule,
+        abi: HEDGING_MODULE_ABI,
+        functionName: isLong ? 'openLongPosition' : 'openShortPosition',
+        args: [amountParsed, targetLeverageBps],
         account: connectedAddress,
-        gas: 800000n,
-        maxFeePerGas: 2000000000n, // 2 gwei
-        maxPriorityFeePerGas: 1000000000n // 1 gwei
+        gas: 2000000n, // Higher gas for looping
+        maxFeePerGas: 2000000000n,
+        maxPriorityFeePerGas: 1000000000n
       });
-      console.log('✓ Deposit tx sent:', depositTx);
-    } catch (depositError) {
-      // Transaction was sent but RPC returned error - continue anyway
-      console.log('Deposit sent (RPC error ignored):', depositError.message);
+      console.log('✓ Position tx sent:', positionTx);
+    } catch (positionError) {
+      console.log('Position sent (RPC error ignored):', positionError.message);
     }
     
-    btn.textContent = 'Position opening...';
-    
-    // Wait for deposit to be mined
-    await new Promise(resolve => setTimeout(resolve, 8000));
+    btn.textContent = 'Looping position...';
+    await new Promise(resolve => setTimeout(resolve, 10000)); // Longer wait for looping
 
     // Refresh data
     await fetchBalances();
@@ -206,8 +241,9 @@ async function loadUserPositions() {
   try {
     const positions = [];
     
-    // Check positions in both vaults
+    // Check positions in both old vaults AND new hedging modules
     for (const [asset, vaultAddress] of Object.entries(VAULT_ADDRESSES)) {
+      // Check old vault positions
       try {
         const position = await publicClient.readContract({
           address: vaultAddress,
@@ -220,11 +256,40 @@ async function loadUserPositions() {
           positions.push({
             asset,
             vaultAddress,
+            type: 'vault',
             ...position
           });
         }
       } catch (error) {
-        console.error(`Error loading ${asset} position:`, error);
+        console.error(`Error loading ${asset} vault position:`, error);
+      }
+
+      // Check new hedging module positions
+      try {
+        const hedgingModule = HEDGING_MODULES[asset];
+        const health = await publicClient.readContract({
+          address: hedgingModule,
+          abi: HEDGING_MODULE_ABI,
+          functionName: 'getPositionHealth',
+          args: []
+        });
+
+        // If there's collateral or debt, there's a position
+        if (health[0] > 0n || health[1] > 0n) {
+          positions.push({
+            asset,
+            vaultAddress: hedgingModule,
+            type: 'hedging',
+            collateral: health[0],
+            debt: health[1],
+            healthFactor: health[2],
+            depositAmount: health[0], // Use collateral as deposit amount for display
+            leverageBps: health[1] > 0n ? 30000 : 0, // Estimate leverage
+            isActive: true
+          });
+        }
+      } catch (error) {
+        console.error(`Error loading ${asset} hedging position:`, error);
       }
     }
 
@@ -242,38 +307,71 @@ async function loadUserPositions() {
     const positionsList = document.getElementById('positionsList');
     
     positionsList.innerHTML = positions.map(pos => {
-      const depositAmount = formatUnits(pos.depositAmount, 6);
-      const leverage = (pos.leverageBps / 10000).toFixed(2);
-      const isLong = pos.leverageBps > 0;
-      const isShort = pos.leverageBps < 0;
-      
-      // Convert wSPYx/wQQQx to SPY/QQQ for display
       const displayName = pos.asset === 'wSPYx' ? 'SPY' : pos.asset === 'wQQQx' ? 'QQQ' : pos.asset;
       
-      return `
-        <div class="position-card" style="background: rgba(255,255,255,0.03); border-radius: 8px; padding: 16px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <div>
-              <div style="font-size: 16px; font-weight: 600; color: #fff;">${displayName}</div>
-              <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px;">
-                ${depositAmount} USDC
+      if (pos.type === 'hedging') {
+        // New hedging module position with real looping
+        const collateral = formatUnits(pos.collateral, 6);
+        const debt = formatUnits(pos.debt, 6);
+        const healthFactor = (Number(pos.healthFactor) / 100).toFixed(1);
+        const leverage = debt > 0 ? ((Number(collateral) + Number(debt)) / Number(collateral)).toFixed(2) : '1.00';
+        
+        return `
+          <div class="position-card" style="background: rgba(102, 126, 234, 0.05); border-radius: 8px; padding: 16px; margin-bottom: 12px; border: 1px solid rgba(102, 126, 234, 0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div>
+                <div style="font-size: 16px; font-weight: 600; color: #fff;">${displayName} <span style="font-size: 10px; background: rgba(102, 126, 234, 0.3); padding: 2px 6px; border-radius: 4px; margin-left: 6px;">LOOPED</span></div>
+                <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px;">
+                  Collateral: $${collateral} | Debt: $${debt}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 20px; font-weight: 700; color: #667eea;">
+                  ${leverage}×
+                </div>
+                <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px;">
+                  Health: ${healthFactor}%
+                </div>
               </div>
             </div>
-            <div style="text-align: right;">
-              <div style="font-size: 20px; font-weight: 700; color: ${isLong ? '#10b981' : isShort ? '#ef4444' : '#6b7280'};">
-                ${leverage}×
-              </div>
-              <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px;">
-                ${isLong ? 'LONG' : isShort ? 'SHORT' : 'NEUTRAL'}
-              </div>
-            </div>
+            <button onclick="closePosition('${pos.asset}', '${pos.vaultAddress}', 'hedging')" 
+                    style="width: 100%; padding: 10px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; color: #ef4444; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;">
+              Close Looped Position
+            </button>
           </div>
-          <button onclick="closePosition('${pos.asset}', '${pos.vaultAddress}')" 
-                  style="width: 100%; padding: 10px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; color: #ef4444; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;">
-            Close Position
-          </button>
-        </div>
-      `;
+        `;
+      } else {
+        // Old vault position (synthetic)
+        const depositAmount = formatUnits(pos.depositAmount, 6);
+        const leverage = (pos.leverageBps / 10000).toFixed(2);
+        const isLong = pos.leverageBps > 0;
+        const isShort = pos.leverageBps < 0;
+        
+        return `
+          <div class="position-card" style="background: rgba(255,255,255,0.03); border-radius: 8px; padding: 16px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div>
+                <div style="font-size: 16px; font-weight: 600; color: #fff;">${displayName}</div>
+                <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px;">
+                  ${depositAmount} USDC
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 20px; font-weight: 700; color: ${isLong ? '#10b981' : isShort ? '#ef4444' : '#6b7280'};">
+                  ${leverage}×
+                </div>
+                <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px;">
+                  ${isLong ? 'LONG' : isShort ? 'SHORT' : 'NEUTRAL'}
+                </div>
+              </div>
+            </div>
+            <button onclick="closePosition('${pos.asset}', '${pos.vaultAddress}', 'vault')" 
+                    style="width: 100%; padding: 10px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; color: #ef4444; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;">
+              Close Position
+            </button>
+          </div>
+        `;
+      }
     }).join('');
 
   } catch (error) {
@@ -282,15 +380,35 @@ async function loadUserPositions() {
 }
 
 // Close position function
-window.closePosition = async function(asset, vaultAddress) {
-  if (!confirm(`Are you sure you want to close your ${asset} position?`)) {
-    return;
-  }
-
+window.closePosition = async function(asset, vaultAddress, type = 'vault') {
   try {
-    console.log(`Closing ${asset} position...`);
+    console.log(`Closing ${asset} ${type} position...`);
 
-    // First, verify the position exists and get the amount
+    if (type === 'hedging') {
+      // Close hedging module position
+      showToast('Closing looped position...', 'info');
+      
+      const closeTx = await walletClient.writeContract({
+        address: vaultAddress,
+        abi: HEDGING_MODULE_ABI,
+        functionName: 'closePosition',
+        args: [],
+        account: connectedAddress,
+        gas: 2000000n,
+        maxFeePerGas: 2000000000n,
+        maxPriorityFeePerGas: 1000000000n
+      });
+      
+      console.log('Close tx sent:', closeTx);
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      
+      await fetchBalances();
+      await loadUserPositions();
+      showToast(`${asset} looped position closed successfully!`, 'success');
+      return;
+    }
+
+    // Handle old vault position
     const position = await publicClient.readContract({
       address: vaultAddress,
       abi: VAULT_ABI,

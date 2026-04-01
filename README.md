@@ -49,6 +49,10 @@ See [`contracts/QUICKSTART.md`](contracts/QUICKSTART.md) for deployment instruct
 - **wSPYx Vault**: [`0xe96adcFA329f40ACFb73AdD9CCCA957686b9712d`](https://explorer-sepolia.inkonchain.com/address/0xe96adcFA329f40ACFb73AdD9CCCA957686b9712d)
 - **wQQQx Vault**: [`0x5861B179Ed373eF0A4A79D4a1C0a0eDd40096955`](https://explorer-sepolia.inkonchain.com/address/0x5861B179Ed373eF0A4A79D4a1C0a0eDd40096955)
 
+### Euler V2 Leverage Looping Modules - NEW! 🚀
+- **SPY Hedging Module**: [`0xd25f4095f623916074255fe4294f6b8b4def5f24`](https://explorer-sepolia.inkonchain.com/address/0xd25f4095f623916074255fe4294f6b8b4def5f24)
+- **QQQ Hedging Module**: [`0x6daae3a87e74c550608a8b1ccba8126d50a7b79d`](https://explorer-sepolia.inkonchain.com/address/0x6daae3a87e74c550608a8b1ccba8126d50a7b79d)
+
 **Status:** ✅ **FULLY FUNCTIONAL WITH JUNIOR TRANCHE** - Full vault contracts with junior liquidity provider support deployed and integrated!
 
 **Features:**

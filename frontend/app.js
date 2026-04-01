@@ -19,6 +19,12 @@ const VAULT_ADDRESSES = {
   wQQQx: '0x5861B179Ed373eF0A4A79D4a1C0a0eDd40096955'
 };
 
+// EulerHedgingModule addresses for real leverage looping
+const HEDGING_MODULES = {
+  wSPYx: '0xd25f4095f623916074255fe4294f6b8b4def5f24',
+  wQQQx: '0x6daae3a87e74c550608a8b1ccba8126d50a7b79d'
+};
+
 // Minimal ERC-20 ABI for balanceOf
 const ERC20_ABI = [
   {
@@ -157,6 +163,48 @@ const VAULT_ABI = [
     outputs: [
       { name: 'twap', type: 'uint128' },
       { name: 'spreadBps', type: 'uint16' }
+    ]
+  }
+];
+
+// EulerHedgingModule ABI for real leverage looping
+const HEDGING_MODULE_ABI = [
+  {
+    name: 'openLongPosition',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'initialCollateral', type: 'uint256' },
+      { name: 'targetLeverage', type: 'uint256' }
+    ],
+    outputs: []
+  },
+  {
+    name: 'openShortPosition',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'initialCollateral', type: 'uint256' },
+      { name: 'targetLeverage', type: 'uint256' }
+    ],
+    outputs: []
+  },
+  {
+    name: 'closePosition',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: []
+  },
+  {
+    name: 'getPositionHealth',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'collateral', type: 'uint256' },
+      { name: 'debt', type: 'uint256' },
+      { name: 'healthFactor', type: 'uint256' }
     ]
   }
 ];
@@ -779,6 +827,13 @@ async function loadTickerData(ticker) {
 document.addEventListener('DOMContentLoaded', async function() {
   await loadTickerData(currentTicker);
   setSliderPos(currentLeverage);
+  
+  // Load junior stats on page load (pool stats don't need wallet)
+  if (typeof updateJuniorPageUI === 'function') {
+    setTimeout(() => {
+      updateJuniorPageUI();
+    }, 500);
+  }
 });
 
 // ═══════════════════════════════════════════════════
@@ -1831,6 +1886,11 @@ function updateLeverageFromPosition(slider, clientX) {
   currentLeverage = snapLeverage(raw);
   setSliderPos(currentLeverage);
   updateAll();
+  
+  // Update UI to show required asset
+  if (typeof updateLeverageUI === 'function') {
+    updateLeverageUI();
+  }
 }
 
 function handleSliderMove(e) {
