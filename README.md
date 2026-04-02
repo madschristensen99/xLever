@@ -2,6 +2,12 @@
 
 Continuous leverage from -4× to +4× on tokenized assets without liquidation risk, powered by Euler Vault Kit.
 
+V1 Leveraged Trading, https://github.com/madschristensen99/xLever/edit/Back-up-main-v1/README.md, x-lever.vercel.app/
+Resources
+
+V2 Openclaw Automated Trading, https://github.com/EcosystemNetwork/xLever/tree/main, https://xlever.markets/
+
+
 ## Project Structure
 
 ```
