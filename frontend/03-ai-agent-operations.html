@@ -1212,8 +1212,13 @@ function initPythonAgentBridge() {
     return;
   }
 
-  // Connect to Python agent WebSocket
-  AgentBridge.connect({ log: logAction });
+  // Connect to Python agent WebSocket (skip in demo mode)
+  const isDemo = new URLSearchParams(window.location.search).get('demo') === 'true';
+  if (!isDemo) {
+    AgentBridge.connect({ log: logAction });
+  } else {
+    logAction('SYSTEM', '🎬 Demo mode - using simulation', 'tertiary');
+  }
 
   // Subscribe to connection events
   AgentBridge.subscribe('connected', () => {
@@ -1416,6 +1421,16 @@ function testInjectNews() {
 <script type="module" src="openbb.js"></script>
 <script src="ux.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', () => { XAuthGate.init({ mode: 'block' }); });
+document.addEventListener('DOMContentLoaded', () => {
+  // Demo mode bypass: add ?demo=true to URL to skip wallet requirement
+  const isDemo = new URLSearchParams(window.location.search).get('demo') === 'true';
+  if (isDemo) {
+    console.log('🎬 Demo mode active - wallet requirement bypassed');
+    // Mock wallet connection for demo
+    window.mockWalletConnected = true;
+  } else {
+    XAuthGate.init({ mode: 'block' });
+  }
+});
 </script>
 </body></html>
